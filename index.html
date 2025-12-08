@@ -28,6 +28,16 @@
       ::-webkit-scrollbar-thumb:hover {
         background: #ef4444; 
       }
+      
+      /* KEYFRAME PER LO SCANNER */
+      @keyframes scan {
+        0% { transform: translateY(-100%); opacity: 0.5; }
+        50% { transform: translateY(100%); opacity: 1; }
+        100% { transform: translateY(-100%); opacity: 0.5; }
+      }
+      .animate-scan {
+        animation: scan 2s infinite linear;
+      }
     </style>
   <script type="importmap">
 {
