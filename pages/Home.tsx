@@ -107,7 +107,7 @@ const Home: React.FC = () => {
                <div>
                   <p className="text-xs text-gray-400 uppercase mb-1">Descrizione Evento</p>
                   <p className="text-sm text-gray-200 leading-relaxed">
-                    L'oscurità ci avvolge, il ritmo ci guida. RUSSOLOCO è una tendenza esclusiva dove la musica incontra l'eleganza. 
+                    Il rosso ci avvolge, il ritmo ci guida. RUSSOLOCO è una tendenza esclusiva dove la musica incontra l'eleganza. 
                     <br /><br />
                     L'ingresso è limitato e strettamente personale. Preparati a vivere una notte indimenticabile.
                   </p>
@@ -119,7 +119,7 @@ const Home: React.FC = () => {
         {/* Registration Form */}
         <GlassPanel className="p-8" intensity="high">
           <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-            Richiedi Accredito
+            Richiedi Partecipazione
             <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
           </h3>
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -194,7 +194,7 @@ const Home: React.FC = () => {
       <footer className="mt-8 text-gray-600 text-xs text-center pb-20">
         &copy; 2025 RUSSOLOCO. ALL RIGHTS RESERVED.
         <br /><br />
-        DESGIN: @gregoriogondola_
+        Design: @gregoriogondola_
       </footer>
     </div>
   );
