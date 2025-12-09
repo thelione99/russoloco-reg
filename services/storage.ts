@@ -1,74 +1,81 @@
-
+import { supabase } from './supabase';
+import { sendApprovalEmail } from './email';
 import { Guest, RequestStatus, ScanResult } from '../types';
 
-const STORAGE_KEY = 'velvet_access_guests';
-
-// Helper to simulate delay for realism
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-export const getGuests = (): Guest[] => {
-  const data = localStorage.getItem(STORAGE_KEY);
-  return data ? JSON.parse(data) : [];
+// Helper per gestire gli errori
+const handleError = (error: any) => {
+  console.error('Supabase Error:', error);
+  throw new Error(error.message);
 };
 
-const saveGuests = (guests: Guest[]) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(guests));
+export const getGuests = async (): Promise<Guest[]> => {
+  const { data, error } = await supabase
+    .from('guests')
+    .select('*')
+    .order('createdAt', { ascending: false });
+
+  if (error) handleError(error);
+  return (data as Guest[]) || [];
 };
 
-export const createRequest = async (guest: Omit<Guest, 'id' | 'status' | 'isUsed' | 'createdAt'>): Promise<void> => {
-  await delay(500);
-  const guests = getGuests();
-  const newGuest: Guest = {
-    ...guest,
-    id: crypto.randomUUID(),
+export const createRequest = async (guestData: Omit<Guest, 'id' | 'status' | 'isUsed' | 'createdAt'>): Promise<void> => {
+  const newGuest = {
+    ...guestData,
     status: RequestStatus.PENDING,
     isUsed: false,
     createdAt: Date.now(),
   };
-  guests.push(newGuest);
-  saveGuests(guests);
+
+  const { error } = await supabase.from('guests').insert([newGuest]);
+  if (error) handleError(error);
 };
 
 export const approveRequest = async (id: string): Promise<Guest | null> => {
-  await delay(300);
-  const guests = getGuests();
-  const guestIndex = guests.findIndex(g => g.id === id);
-  
-  if (guestIndex === -1) return null;
+  // 1. Aggiorna stato nel DB
+  const { data, error } = await supabase
+    .from('guests')
+    .update({ 
+      status: RequestStatus.APPROVED,
+      qrCode: id // Usiamo l'ID come contenuto del QR
+    })
+    .eq('id', id)
+    .select()
+    .single();
 
-  // Generate QR content (using the ID for security/uniqueness)
-  guests[guestIndex].status = RequestStatus.APPROVED;
-  guests[guestIndex].qrCode = guests[guestIndex].id; 
+  if (error) handleError(error);
   
-  saveGuests(guests);
+  const updatedGuest = data as Guest;
+
+  // 2. Invia Email Reale
+  if (updatedGuest) {
+     await sendApprovalEmail(updatedGuest);
+  }
   
-  // Simulate sending email/whatsapp
-  console.log(`[NOTIFICATION] Sending approval to ${guests[guestIndex].email} via WhatsApp/Email with QR code.`);
-  
-  return guests[guestIndex];
+  return updatedGuest;
 };
 
 export const rejectRequest = async (id: string): Promise<void> => {
-  await delay(300);
-  const guests = getGuests();
-  const guestIndex = guests.findIndex(g => g.id === id);
-  
-  if (guestIndex !== -1) {
-    guests[guestIndex].status = RequestStatus.REJECTED;
-    saveGuests(guests);
-  }
+  const { error } = await supabase
+    .from('guests')
+    .update({ status: RequestStatus.REJECTED })
+    .eq('id', id);
+
+  if (error) handleError(error);
 };
 
 export const scanQRCode = async (qrContent: string): Promise<ScanResult> => {
-  await delay(400); // Simulate network check
-  const guests = getGuests();
-  const guestIndex = guests.findIndex(g => g.id === qrContent);
+  // Cerca l'ospite tramite ID (che è il contenuto del QR)
+  const { data, error } = await supabase
+    .from('guests')
+    .select('*')
+    .eq('id', qrContent)
+    .single();
 
-  if (guestIndex === -1) {
-    return { valid: false, message: 'QR NON VALIDO', type: 'error' };
+  if (error || !data) {
+    return { valid: false, message: 'QR NON VALIDO O NON TROVATO', type: 'error' };
   }
 
-  const guest = guests[guestIndex];
+  const guest = data as Guest;
 
   if (guest.status !== RequestStatus.APPROVED) {
     return { valid: false, message: 'ACCESSO NEGATO (Non Approvato)', type: 'error' };
@@ -83,14 +90,21 @@ export const scanQRCode = async (qrContent: string): Promise<ScanResult> => {
     };
   }
 
-  // Mark as used
-  guests[guestIndex].isUsed = true;
-  guests[guestIndex].usedAt = Date.now();
-  saveGuests(guests);
+  // Segna come usato
+  const { error: updateError } = await supabase
+    .from('guests')
+    .update({ isUsed: true, usedAt: Date.now() })
+    .eq('id', guest.id);
 
-  return { valid: true, guest: guests[guestIndex], message: 'ACCESSO CONSENTITO', type: 'success' };
+  if (updateError) {
+    return { valid: false, message: 'ERRORE AGGIORNAMENTO DB', type: 'error' };
+  }
+
+  return { valid: true, guest, message: 'ACCESSO CONSENTITO', type: 'success' };
 };
 
-export const resetData = () => {
-  localStorage.removeItem(STORAGE_KEY);
+export const resetData = async () => {
+    // ATTENZIONE: Questo cancella tutto il DB reale!
+    const { error } = await supabase.from('guests').delete().neq('id', '00000000-0000-0000-0000-000000000000'); 
+    if (error) handleError(error);
 };
