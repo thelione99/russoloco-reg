@@ -1,110 +1,101 @@
-import { supabase } from './supabase';
-import { sendApprovalEmail } from './email';
 import { Guest, RequestStatus, ScanResult } from '../types';
 
-// Helper per gestire gli errori
-const handleError = (error: any) => {
-  console.error('Supabase Error:', error);
-  throw new Error(error.message);
+/**
+ * Helper per effettuare chiamate API standardizzate verso Cloudflare Functions.
+ * Gestisce automaticamente la conversione in JSON e gli errori di rete.
+ */
+const apiCall = async <T>(endpoint: string, method: string = 'GET', body?: any): Promise<T> => {
+  try {
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    };
+
+    const config: RequestInit = {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    };
+
+    // La chiamata va a /api/nome_endpoint (che corrisponde a functions/api/nome_endpoint.ts)
+    const response = await fetch(`/api/${endpoint}`, config);
+
+    if (!response.ok) {
+      // Tenta di leggere il messaggio di errore dal backend, se presente
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Errore API: ${response.status} ${response.statusText}`);
+    }
+
+    // Se la risposta è vuota (es. 204 No Content), ritorna null
+    if (response.status === 204) return null as T;
+
+    return await response.json();
+  } catch (error) {
+    console.error(`Errore nella chiamata a ${endpoint}:`, error);
+    throw error;
+  }
 };
 
+/**
+ * Ottiene la lista di tutti gli ospiti dal database MySQL.
+ */
 export const getGuests = async (): Promise<Guest[]> => {
-  const { data, error } = await supabase
-    .from('guests')
-    .select('*')
-    .order('createdAt', { ascending: false });
-
-  if (error) handleError(error);
-  return (data as Guest[]) || [];
+  // Chiama functions/api/guests.ts
+  return await apiCall<Guest[]>('guests');
 };
 
+/**
+ * Crea una nuova richiesta di partecipazione.
+ * Salva i dati nel DB con stato 'PENDING'.
+ */
 export const createRequest = async (guestData: Omit<Guest, 'id' | 'status' | 'isUsed' | 'createdAt'>): Promise<void> => {
-  const newGuest = {
-    ...guestData,
-    status: RequestStatus.PENDING,
-    isUsed: false,
-    createdAt: Date.now(),
-  };
-
-  const { error } = await supabase.from('guests').insert([newGuest]);
-  if (error) handleError(error);
+  // Chiama functions/api/register.ts
+  await apiCall('register', 'POST', guestData);
 };
 
+/**
+ * Approva un ospite.
+ * Il backend aggiornerà lo stato nel DB e invierà l'email con il QR Code.
+ */
 export const approveRequest = async (id: string): Promise<Guest | null> => {
-  // 1. Aggiorna stato nel DB
-  const { data, error } = await supabase
-    .from('guests')
-    .update({ 
-      status: RequestStatus.APPROVED,
-      qrCode: id // Usiamo l'ID come contenuto del QR
-    })
-    .eq('id', id)
-    .select()
-    .single();
-
-  if (error) handleError(error);
-  
-  const updatedGuest = data as Guest;
-
-  // 2. Invia Email Reale
-  if (updatedGuest) {
-     await sendApprovalEmail(updatedGuest);
-  }
-  
-  return updatedGuest;
+  // Chiama functions/api/approve.ts
+  const response = await apiCall<{ success: boolean, guest: Guest }>('approve', 'POST', { id });
+  return response.guest;
 };
 
+/**
+ * Rifiuta un ospite.
+ * Aggiorna solo lo stato nel DB.
+ */
 export const rejectRequest = async (id: string): Promise<void> => {
-  const { error } = await supabase
-    .from('guests')
-    .update({ status: RequestStatus.REJECTED })
-    .eq('id', id);
-
-  if (error) handleError(error);
+  // Chiama functions/api/reject.ts
+  await apiCall('reject', 'POST', { id });
 };
 
+/**
+ * Scansiona un QR Code (all'ingresso).
+ * Verifica validità, approvazione e se è già stato usato.
+ */
 export const scanQRCode = async (qrContent: string): Promise<ScanResult> => {
-  // Cerca l'ospite tramite ID (che è il contenuto del QR)
-  const { data, error } = await supabase
-    .from('guests')
-    .select('*')
-    .eq('id', qrContent)
-    .single();
-
-  if (error || !data) {
-    return { valid: false, message: 'QR NON VALIDO O NON TROVATO', type: 'error' };
-  }
-
-  const guest = data as Guest;
-
-  if (guest.status !== RequestStatus.APPROVED) {
-    return { valid: false, message: 'ACCESSO NEGATO (Non Approvato)', type: 'error' };
-  }
-
-  if (guest.isUsed) {
-    return { 
-      valid: false, 
-      guest, 
-      message: `GIÀ UTILIZZATO: ${new Date(guest.usedAt!).toLocaleTimeString()}`, 
-      type: 'warning' 
+  try {
+    // Chiama functions/api/scan.ts
+    // Invia l'ID contenuto nel QR code al backend per la verifica
+    const result = await apiCall<ScanResult>('scan', 'POST', { qrContent });
+    return result;
+  } catch (error) {
+    // Gestione errori di rete o server offline durante la scansione
+    return {
+      valid: false,
+      message: 'ERRORE DI RETE',
+      type: 'error'
     };
   }
-
-  // Segna come usato
-  const { error: updateError } = await supabase
-    .from('guests')
-    .update({ isUsed: true, usedAt: Date.now() })
-    .eq('id', guest.id);
-
-  if (updateError) {
-    return { valid: false, message: 'ERRORE AGGIORNAMENTO DB', type: 'error' };
-  }
-
-  return { valid: true, guest, message: 'ACCESSO CONSENTITO', type: 'success' };
 };
 
-export const resetData = async () => {
-    // ATTENZIONE: Questo cancella tutto il DB reale!
-    const { error } = await supabase.from('guests').delete().neq('id', '00000000-0000-0000-0000-000000000000'); 
-    if (error) handleError(error);
+/**
+ * Reset completo del database (SOLO PER ADMIN/DEV).
+ * Cancella tutti gli ospiti.
+ */
+export const resetData = async (): Promise<void> => {
+  // Chiama functions/api/reset.ts
+  await apiCall('reset', 'POST');
 };
