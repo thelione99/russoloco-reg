@@ -1,4 +1,3 @@
-
 import { Guest, RequestStatus, ScanResult } from '../types';
 
 const STORAGE_KEY = 'velvet_access_guests';

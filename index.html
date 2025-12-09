@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -28,16 +29,6 @@
       ::-webkit-scrollbar-thumb:hover {
         background: #ef4444; 
       }
-      
-      /* KEYFRAME PER LO SCANNER */
-      @keyframes scan {
-        0% { transform: translateY(-100%); opacity: 0.5; }
-        50% { transform: translateY(100%); opacity: 1; }
-        100% { transform: translateY(-100%); opacity: 0.5; }
-      }
-      .animate-scan {
-        animation: scan 2s infinite linear;
-      }
     </style>
   <script type="importmap">
 {
@@ -50,12 +41,16 @@
     "react-qr-code": "https://aistudiocdn.com/react-qr-code@^2.0.18",
     "react-router-dom": "https://aistudiocdn.com/react-router-dom@^7.10.1",
     "jsqr": "https://aistudiocdn.com/jsqr@^1.4.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/"
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
+    "path": "https://aistudiocdn.com/path@^0.12.7",
+    "vite": "https://aistudiocdn.com/vite@^7.2.7",
+    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.2"
   }
 }
 </script>
 </head>
   <body>
     <div id="root"></div>
-  </body>
+  <script type="module" src="/index.tsx"></script>
+</body>
 </html>
